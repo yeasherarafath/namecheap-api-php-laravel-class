@@ -20,11 +20,67 @@ class NamecheapApiController extends Controller
 
     private $apiHost = "";
 
-    private $allowedTransferExtensions = [
-        'biz', 'ca', 'cc', 'co', 'com', 'com.es', 'com.pe', 'es', 
-        'in', 'info', 'me', 'mobi', 'net', 'net.pe', 'nom.es', 
+    private static $allowedTransferExtensions = [
+        'biz', 'ca', 'cc', 'co', 'com', 'com.es', 'com.pe', 'es',
+        'in', 'info', 'me', 'mobi', 'net', 'net.pe', 'nom.es',
         'org', 'org.es', 'org.pe', 'pe', 'tv', 'us'
     ];
+
+    public static $positiveTransferStatus = [
+        1 => 'WhoIs information matches',
+        5 => 'Transferred and paid successfully',
+        9 => 'Awaiting auto verification of transfer request',
+        10 => 'Transfer in Process - Acquiring Current Whois for Transfer Verification',
+        11 => 'Auto verification of transfer request initiated',
+        12 => 'Awaiting for auto transfer string validation',
+        13 => 'Domain awaiting transfer initiation',
+        14 => 'Domain transfer initiated and awaiting approval',
+        28 => 'Fax received - awaiting registrant verification',
+        29 => 'Awaiting manual fax verification',
+        -1 => 'EPP Provided. Queued for Transfer / Queued for submission or Queued for Transfer or EPP Provided',
+        -5 => 'Authorization mail will be sent shortly',
+        -2 => 'Resubmitted - Queued for transfer',
+        // -1 => 'Queued for submission or Queued for Transfer or EPP Provided',
+    ];
+    public static $negativeTransferStatus = [
+        2 => 'Canceled due to WhoIs error',
+        3 => 'Pending due to domain status',
+        4 => 'Canceled due to domain status',
+        6 => 'Transfer incomplete - charge problem',
+        7 => 'Frozen due to charge problem',
+        8 => 'NSI rejected transfer',
+        15 => 'Canceled - cannot obtain domain contacts from Whois',
+        16 => 'Canceled - domain contacts did not respond to verification e-mail',
+        17 => 'Canceled - domain contacts did not approve transfer of domain',
+        18 => 'Canceled - domain validation string is invalid',
+        19 => 'Canceled - Whois information provided does not match current registrant',
+        20 => 'Canceled - Domain is currently not registered and cannot be transferred',
+        21 => 'Canceled - Domain is already registered in account and cannot be transferred',
+        22 => 'Canceled - Domain is locked at current registrar, or is not yet 60 days old',
+        23 => 'Canceled - Transfer already initiated for this domain',
+        24 => 'Canceled - Unable to transfer due to unknown error',
+        25 => 'Canceled - The current registrar has rejected transfer (please contact them for details)',
+        26 => 'Canceled - Transfer authorization fax not received',
+        27 => 'Canceled by customer',
+        30 => 'Canceled - Domain name is invalid or is Invalid for Transfers',
+        31 => 'Canceled - Domain is currently undergoing transfer by another Registrar',
+        32 => 'Canceled - Invalid EPP/authorization key - Please contact current registrar to obtain correct key',
+        33 => 'Canceled - Cannot transfer domain from name-only account',
+        34 => 'Unable to complete transfer. Transfers must include a change in registrar',
+        35 => 'Transfer request not yet submitted',
+        36 => 'Canceled - Account is not authorized to perform domain transfers',
+        37 => 'Canceled - Domain was not retagged or not retagged in time by losing registrar',
+        45 => 'Order canceled',
+        48 => 'Canceled - registrant to registrant transfer only allowed into Retail accounts',
+        49 => 'Canceled - Maximum registration period exceeded',
+        50 => 'Canceled - Cannot transfer premium name',
+        51 => 'Canceled - Registrant info is missing',
+        -4 => 'Canceled - Domain is locked at current registrar, or is not yet 60 days old',
+        -22 => 'Canceled - Invalid entry / Waiting for EPP Transfer Code from Customer',
+        -202 => 'Unable to retrieve expiration date from Whois database',
+        // -22 => 'Waiting for EPP Transfer Code from Customer',
+    ];
+    
 
     function __construct(Request $request, $autoSetIp = false){
 
@@ -36,12 +92,12 @@ class NamecheapApiController extends Controller
         if($autoSetIp){
             $this->clientIP = $request->ip();
         }else{
-            $this->clientIP = '***.***.***.***';
+            $this->clientIP = '118.179.179.232';
         }
 
         $this->setApiHost();
         $this->initQueryParam();
-        
+
     }
 
     function setApiHost(){
@@ -72,7 +128,7 @@ class NamecheapApiController extends Controller
 
     function getApiURL(){
         // https://<service url>/xml.response?ApiUser=<api_username>&ApiKey=<api_key>&UserName=<nc_username>&Command=<cmd_name>&ClientIp=<clientIPaddress>
-        $url = $this->apiHost.'?'.Arr::query($this->queryParam);;
+        $url = $this->apiHost.'?'.urldecode(Arr::query($this->queryParam));;
         return $url;
     }
 
@@ -113,6 +169,25 @@ class NamecheapApiController extends Controller
         return $this;
     }
 
+
+    function makeDomainTransferCommand($domain, $epp, $year = 1){
+        $this->command = 'namecheap.domains.transfer.create';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        $this->setApiQueryParam('EPPCode',$epp);
+        $this->setApiQueryParam('WGenable','yes');
+        $this->setApiQueryParam('AddFreeWhoisguard','yes');
+        $this->setApiQueryParam('Years',$year);
+        return $this;
+    }
+
+    function getDomainTransferStatus($TransferID){
+        $this->command = 'namecheap.domains.transfer.getStatus';
+        $this->initQueryParam();
+        $this->setApiQueryParam('TransferID',$TransferID);
+        return $this;
+    }
+
     /**
      * Summary of getDomainPriceCommand
      * @param string $domain com org net
@@ -128,7 +203,7 @@ class NamecheapApiController extends Controller
 
     /**
      * Create or register a new domain createDomainCommand
-     * @param array $data 
+     * @param array $data
      * DomainName Years (2) RegistrantFirstName RegistrantLastName RegistrantAddress1 RegistrantCity RegistrantStateProvince RegistrantPostalCode RegistrantCountry RegistrantPhone RegistrantEmailAddress
      * AddFreeWhoisguard WGEnabled (yes/no)
      * @return static
@@ -136,8 +211,29 @@ class NamecheapApiController extends Controller
     function createDomainCommand(array $data){
         $this->command = 'namecheap.domains.create';
         $this->initQueryParam();
+        $this->setDomainContact($data);
+        return $this;
+    }
+
+    function renewDomainCommand($domain, $year){
+        $this->command = 'namecheap.domains.renew';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName', $domain);
+        $this->setApiQueryParam('Years', $year);
+        return $this;
+    }
+
+    function setDomainContact(array $data, $isEdit = false){
         // Mandatory Fields
-        $this->setApiQueryParam('DomainName', $data['DomainName']);
+        if(!$isEdit){
+            $this->setApiQueryParam('DomainName', $data['DomainName']);
+        }
+
+        $data['RegistrantCountry'] = $data['RegistrantCountry'] ?? 'United States';
+        $data['RegistrantPhone'] = '+'.str($data['RegistrantPhone'])->remove([
+            '-','+'
+        ])->value();
+
         $this->setApiQueryParam('Years', $data['Years'] ?? 2); // Default value is 2
         $this->setApiQueryParam('RegistrantFirstName', $data['RegistrantFirstName']);
         $this->setApiQueryParam('RegistrantLastName', $data['RegistrantLastName']);
@@ -191,16 +287,96 @@ class NamecheapApiController extends Controller
         $this->setApiQueryParam('AuxBillingEmailAddress', $data['AuxBillingEmailAddress'] ?? $data['RegistrantEmailAddress']);
 
         // Additional Fields
-        $this->setApiQueryParam('IdnCode', $_GET['IdnCode'] ?? '');
-        $this->setApiQueryParam('ExtendedAttributes', $_GET['ExtendedAttributes'] ?? '');
-        $this->setApiQueryParam('Nameservers', $_GET['Nameservers'] ?? '');
-        $this->setApiQueryParam('AddFreeWhoisguard', $_GET['AddFreeWhoisguard'] ?? 'no');
-        $this->setApiQueryParam('WGEnabled', $_GET['WGEnabled'] ?? 'no');
-        $this->setApiQueryParam('IsPremiumDomain', $_GET['IsPremiumDomain'] ?? '');
-        $this->setApiQueryParam('PremiumPrice', $_GET['PremiumPrice'] ?? '');
-        $this->setApiQueryParam('EapFee', $_GET['EapFee'] ?? '');
+        $this->setApiQueryParam('AddFreeWhoisguard', 'yes');
+        $this->setApiQueryParam('WGEnabled', 'yes');
+    //     $this->setApiQueryParam('IdnCode', $_GET['IdnCode'] ?? '');
+    //     $this->setApiQueryParam('ExtendedAttributes', $_GET['ExtendedAttributes'] ?? '');
+    //     $this->setApiQueryParam('Nameservers', $_GET['Nameservers'] ?? '');
+    //     $this->setApiQueryParam('IsPremiumDomain', $_GET['IsPremiumDomain'] ?? '');
+    //     $this->setApiQueryParam('PremiumPrice', $_GET['PremiumPrice'] ?? '');
+    //     $this->setApiQueryParam('EapFee', $_GET['EapFee'] ?? '');
+
+}
+
+    /**
+     * Summary of getDomainInfoCommand
+     * @param string $domain
+     * @return static
+     */
+    function getDomainNameServerInfoCommand(string $domain){
+        $this->command = 'namecheap.domains.dns.getList';
+        $this->initQueryParam();
+        $this->setApiQueryParam('SLD', strtolower(pathinfo($domain,PATHINFO_FILENAME)));
+        $this->setApiQueryParam('TLD', strtolower(pathinfo($domain,PATHINFO_EXTENSION)));
+        return $this;
+    }
+    function setDomainNameServerInfoCommand(string $domain, string $host){
+        $this->command = 'namecheap.domains.dns.setCustom';
+        $this->initQueryParam();
+        $this->setApiQueryParam('SLD', strtolower(pathinfo($domain,PATHINFO_FILENAME)));
+        $this->setApiQueryParam('TLD', strtolower(pathinfo($domain,PATHINFO_EXTENSION)));
+        $this->setApiQueryParam('Nameservers', $host);
+        return $this;
+    }
+    function getDomainRegisterLockCommand(string $domain){
+        $this->command = 'namecheap.domains.getRegistrarLock';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        return $this;
+    }
+    function setDomainRegisterLockCommand(string $domain,$status){
+        $this->command = 'namecheap.domains.setRegistrarLock';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        $this->setApiQueryParam('LockAction',$status);
+        return $this;
+    }
+
+    function getDomainContactCommand(string $domain){
+        $this->command = 'namecheap.domains.getContacts';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        return $this;
+    }
+    function setDomainContactCommand(string $domain, array $data){
+        $this->command = 'namecheap.domains.setContacts';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+
+        $this->setDomainContact($data,true);
 
         return $this;
+    }
+
+    function getDomainEmailForwardingCommand(string $domain){
+        $this->command = 'namecheap.domains.dns.getEmailForwarding';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        return $this;
+    }
+
+    function setDomainEmailForwardingCommand(string $domain,$data){
+        $this->command = 'namecheap.domains.dns.setEmailForwarding';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        foreach ($data['MailBox'] as $key => $value) {
+            $this->setApiQueryParam("MailBox".($key+1),strtolower($value));
+            $this->setApiQueryParam("ForwardTo".($key+1),$data['ForwardTo'][($key)]);
+        }
+        return $this;
+    }
+
+
+    function getDomainInfo(string $domain){
+        $this->command = 'namecheap.domains.getInfo';
+        $this->initQueryParam();
+        $this->setApiQueryParam('DomainName',$domain);
+        return $this;
+    }
+
+
+    public static function getTransferExtensions(){
+        return self::$allowedTransferExtensions;
     }
 }
 
