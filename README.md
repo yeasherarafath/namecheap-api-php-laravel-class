@@ -357,7 +357,7 @@ If an error occurs, the response will include an error message. You can check th
 
 ```php
 $response = (new NamecheapApiController($request))->checkDomainCommand('example.com')->send();
-if ($response->status == 'EORROR') {
+if ($response->status == 'ERROR') {
     echo 'Error: ' . $response->error->message;
 }
 ```
