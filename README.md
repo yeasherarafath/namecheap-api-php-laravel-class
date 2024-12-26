@@ -371,5 +371,3 @@ This integration allows you to interact with Namecheap's API for domain manageme
 .
 
 For additional information, please refer to the official [Namecheap API documentation](https://www.namecheap.com/support/api/).
-
-```
