@@ -92,7 +92,7 @@ class NamecheapApiController extends Controller
         if($autoSetIp){
             $this->clientIP = $request->ip();
         }else{
-            $this->clientIP = '118.179.179.232';
+            // $this->clientIP = '***.***.***.***'; //ip should be whitelisted on namecheap
         }
 
         $this->setApiHost();
